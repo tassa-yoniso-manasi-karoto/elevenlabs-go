@@ -13,6 +13,9 @@ import (
 	"net/url"
 	"sync"
 	"time"
+	"os"
+	"path/filepath"
+	"mime/multipart"
 )
 
 const (
@@ -562,4 +565,36 @@ func (c *Client) GetUser() (User, error) {
 	}
 
 	return user, nil
+}
+
+
+// VoiceIsolator removes background noise from a voice recording.
+//
+// It takes a string argument that represents the absolute path of the audiofile to be processed by the voice isolator.
+// (Alternatively called audio isolation in Elevenlabs' documentation.)
+//
+// It returns a byte slice that contains mpeg encoded audio data in case of success, or an error.
+func (c *Client) VoiceIsolator(filePath string) ([]byte, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+	RespBodyWriter := bytes.Buffer{}
+	ReqBodyReader  := &bytes.Buffer{}
+	writer := multipart.NewWriter(ReqBodyReader)
+	part, err := writer.CreateFormFile("audio", filepath.Base(file.Name()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create form file: %w", err)
+	}
+	_, err = io.Copy(part, file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy file content: %w", err)
+	}
+	writer.Close()
+	err = c.doRequest(c.ctx, &RespBodyWriter, http.MethodPost, fmt.Sprintf("%s/audio-isolation", c.baseURL), ReqBodyReader, writer.FormDataContentType(), []QueryFunc{}...)
+	if err != nil {
+		return nil, err
+	}
+	return RespBodyWriter.Bytes(), nil
 }
